@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        canvas { display: block; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.18.0/matter.min.js"></script>
+    <script>
+const { Engine, Render, Runner, Bodies, Composite, Vertices, Bounds } = Matter;
+
+// 初始化物理引擎
+const engine = Engine.create();
+const canvas = document.getElementById('canvas');
+const render = Render.create({
+    element: document.body,
+    engine: engine,
+    canvas: canvas,
+    options: {
+        width: window.innerWidth,
+        height: window.innerHeight,
+        background: 'rgba(0,0,0,0)',
+        wireframes: false
+    }
+});
+
+// 创建边界
+const createWalls = () => [
+    Bodies.rectangle(window.innerWidth/2, window.innerHeight+20, window.innerWidth, 40, { 
+        isStatic: true,
+        render: { visible: false }
+    }), // 地面
+    Bodies.rectangle(-20, window.innerHeight/2, 40, window.innerHeight, { 
+        isStatic: true,
+        render: { visible: false }
+    }), // 左墙
+    Bodies.rectangle(window.innerWidth+20, window.innerHeight/2, 40, window.innerHeight, { 
+        isStatic: true,
+        render: { visible: false }
+    })  // 右墙
+];
+
+// 字母生成器
+class LetterFactory {
+    constructor() {
+        this.characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        this.colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEEAD'];
+    }
+
+    create() {
+        const fontSize = 20 + Math.random() * 30;
+        const char = this.characters[Math.floor(Math.random() * this.characters.length)];
+        
+        // 创建文本形状
+        const vertices = this.createTextVertices(char, fontSize);
+        if (vertices.length === 0) return null;
+
+        return Bodies.fromVertices(
+            Math.random() * window.innerWidth,
+            -50,
+            vertices,
+            {
+                density: 0.5, // 近似水的密度
+                restitution: 0.2,
+                render: {
+                    fillStyle: this.colors[Math.floor(Math.random() * this.colors.length)],
+                    text: {
+                        content: char,
+                        size: fontSize,
+                        family: 'Arial'
+                    }
+                }
+            }
+        );
+    }
+
+    createTextVertices(char, fontSize) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 设置画布尺寸
+        canvas.width = fontSize * 2;
+        canvas.height = fontSize * 2;
+        
+        // 绘制文本获取形状
+        ctx.font = `${fontSize}px Arial`;
+        ctx.fillText(char, fontSize/2, fontSize);
+        
+        // 提取像素数据
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        return this.getVerticesFromImageData(imageData, fontSize);
+    }
+
+    getVerticesFromImageData(imageData, fontSize) {
+        const points = [];
+        const scale = 0.2; // 顶点简化比例
+        const threshold = 50; // 透明度阈值
+        
+        // 扫描像素获取轮廓点
+        for (let y = 0; y < imageData.height; y += 2) {
+            for (let x = 0; x < imageData.width; x += 2) {
+                const alpha = imageData.data[(y * imageData.width + x) * 4 + 3];
+                if (alpha > threshold) {
+                    points.push({ 
+                        x: (x - imageData.width/2) * scale, 
+                        y: (y - imageData.height/2) * scale 
+                    });
+                }
+            }
+        }
+        return Vertices.clockwiseSort(points);
+    }
+}
+
+// 初始化系统
+const letterFactory = new LetterFactory();
+let walls = createWalls();
+Composite.add(engine.world, walls);
+
+// 响应窗口变化
+window.addEventListener('resize', () => {
+    // 更新渲染器尺寸
+    render.canvas.width = window.innerWidth;
+    render.canvas.height = window.innerHeight;
+    
+    // 更新边界
+    Composite.remove(engine.world, walls);
+    walls = createWalls();
+    Composite.add(engine.world, walls);
+});
+
+// 生成字母循环
+setInterval(() => {
+    const letter = letterFactory.create();
+    if (letter) Composite.add(engine.world, letter);
+}, 500);
+
+// 设置重力（9.8 m/s² 转换为像素单位）
+engine.gravity.y = 0.98; 
+
+// 启动系统
+Runner.run(engine);
+Render.run(render);
+
+// 碰撞事件处理
+Matter.Events.on(engine, 'collisionStart', (event) => {
+    event.pairs.forEach(pair => {
+        pair.bodyA.render.fillStyle = '#FF0000';
+        pair.bodyB.render.fillStyle = '#FF0000';
+    });
+});
+    </script>
+</body>
+</html> 
